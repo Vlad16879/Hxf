@@ -1,246 +1,186 @@
 --[[
-    Specter Helper для Delta Executor
-    Функции: ESP игроков, Pathfinding до ближайшего игрока
-    GitHub: ...
+    Universal ESP + Pathfinding
+    Одна кнопка, работает в любой игре
+    Для Delta Executor (Android)
 --]]
 
--- Сервисы
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local PathfindingService = game:GetService("PathfindingService")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- Основной GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SpecterHelperGUI"
-ScreenGui.Parent = CoreGui
+-- Состояние
+local enabled = false
 
--- Переменные состояния
-local espEnabled = false
-local pathEnabled = false
-local waypoints = {} -- для хранения точек пути
+-- Объекты
+local espItems = {}
+local waypoints = {}       -- для pathfinding
+local lineToTarget = nil   -- для прямой линии
 
--- Функция для создания кнопки GUI
-local function createButton(name, position, callback)
-    local button = Instance.new("TextButton")
-    button.Name = name
-    button.Size = UDim2.new(0, 150, 0, 40)
-    button.Position = position
-    button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    button.TextColor3 = Color3.new(1, 1, 1)
-    button.Text = name
-    button.Font = Enum.Font.SourceSansBold
-    button.TextSize = 16
-    button.BorderSizePixel = 0
-    button.Parent = ScreenGui
-    Instance.new("UICorner", button)
+-- ====================== ГЛАВНАЯ КНОПКА ======================
+local ScreenGui = Instance.new("ScreenGui", CoreGui)
+ScreenGui.Name = "UniversalTool"
 
-    button.MouseButton1Click:Connect(function()
-        callback()
-    end)
-
-    return button
-end
-
--- Функция для создания чекбокса
-local function createCheckbox(name, position, callback)
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(0, 150, 0, 40)
-    button.Position = position
-    button.Text = name .. ": ВЫКЛ"
-    button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    button.TextColor3 = Color3.new(1, 1, 1)
-    button.Font = Enum.Font.SourceSansBold
-    button.TextSize = 16
-    button.BorderSizePixel = 0
-    button.Parent = ScreenGui
-    Instance.new("UICorner", button)
-
-    local enabled = false
-    button.MouseButton1Click:Connect(function()
-        enabled = not enabled
-        button.Text = name .. ": " .. (enabled and "ВКЛ" or "ВЫКЛ")
-        button.BackgroundColor3 = enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(60, 60, 60)
-        callback(enabled)
-    end)
-
-    return button
-end
+local mainButton = Instance.new("TextButton")
+mainButton.Size = UDim2.new(0, 180, 0, 45)
+mainButton.Position = UDim2.new(0.5, -90, 0, 20)
+mainButton.Text = "ESP + Путь: ВЫКЛ"
+mainButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+mainButton.TextColor3 = Color3.new(1, 1, 1)
+mainButton.Font = Enum.Font.SourceSansBold
+mainButton.TextSize = 16
+mainButton.BorderSizePixel = 0
+mainButton.Parent = ScreenGui
+Instance.new("UICorner", mainButton)
 
 -- ====================== ESP ======================
-local espHighlights = {}
-
-local function createESPForPlayer(player)
+local function createESP(player)
     if player == LocalPlayer then return end
 
-    local function onCharacterAdded(character)
+    local function onCharacter(character)
+        local head = character:WaitForChild("Head")
         local highlight = Instance.new("Highlight")
-        highlight.Name = player.Name .. "_ESP"
         highlight.FillColor = Color3.fromRGB(255, 0, 0)
         highlight.OutlineColor = Color3.fromRGB(255, 50, 50)
-        highlight.FillTransparency = 0.5
-        highlight.OutlineTransparency = 0
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.Adornee = character
         highlight.Parent = CoreGui
 
-        -- Расстояние
-        local billboardGui = Instance.new("BillboardGui")
-        billboardGui.Name = "Distance"
-        billboardGui.Size = UDim2.new(0, 200, 0, 30)
-        billboardGui.StudsOffset = Vector3.new(0, 3, 0)
-        billboardGui.AlwaysOnTop = true
-        billboardGui.Parent = character:WaitForChild("Head")
+        local billboard = Instance.new("BillboardGui")
+        billboard.Size = UDim2.new(0, 200, 0, 30)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Parent = head
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.Font = Enum.Font.SourceSansBold
+        label.TextSize = 18
+        label.Text = "..."
+        label.Parent = billboard
 
-        local textLabel = Instance.new("TextLabel")
-        textLabel.Size = UDim2.new(1, 0, 1, 0)
-        textLabel.BackgroundTransparency = 1
-        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        textLabel.Font = Enum.Font.SourceSansBold
-        textLabel.TextSize = 18
-        textLabel.Text = "..."
-        textLabel.Parent = billboardGui
-
-        espHighlights[player] = {
-            Highlight = highlight,
-            Billboard = billboardGui,
-            TextLabel = textLabel
-        }
+        espItems[player] = { Highlight = highlight, Billboard = billboard, Label = label }
     end
 
-    if player.Character then
-        onCharacterAdded(player.Character)
+    if player.Character then onCharacter(player.Character) end
+    player.CharacterAdded:Connect(onCharacter)
+end
+
+local function clearESP()
+    for _, data in pairs(espItems) do
+        data.Highlight:Destroy()
+        data.Billboard:Destroy()
     end
-    player.CharacterAdded:Connect(onCharacterAdded)
+    espItems = {}
 end
 
 local function updateESPDistances()
-    if not espEnabled then return end
-    for _, data in pairs(espHighlights) do
-        local character = data.Highlight.Adornee
+    if not enabled then return end
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    for player, data in pairs(espItems) do
+        local character = player.Character
         if character and character:FindFirstChild("Head") then
-            local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and (character.Head.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude) or 0
-            data.TextLabel.Text = string.format("%.1f м", distance)
+            local dist = (character.Head.Position - myRoot.Position).Magnitude
+            data.Label.Text = string.format("%.1f м", dist)
         end
     end
 end
 
-local function toggleESP(enabled)
-    espEnabled = enabled
-    if enabled then
-        for _, player in ipairs(Players:GetPlayers()) do
-            createESPForPlayer(player)
-        end
-    else
-        for _, data in pairs(espHighlights) do
-            if data.Highlight then data.Highlight:Destroy() end
-            if data.Billboard then data.Billboard:Destroy() end
-        end
-        espHighlights = {}
-    end
-end
-
--- ====================== PATHFINDING ======================
+-- ====================== TRAJECTORY ======================
 local function clearPath()
-    for _, waypointPart in ipairs(waypoints) do
-        waypointPart:Destroy()
-    end
+    for _, obj in ipairs(waypoints) do obj:Destroy() end
     waypoints = {}
+    if lineToTarget then lineToTarget:Destroy(); lineToTarget = nil end
 end
 
-local function createPathToTarget(targetPosition)
+local function buildPathTo(targetPos)
     clearPath()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
 
-    local character = LocalPlayer.Character
-    if not character then return end
-
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
-
-    -- Создаем путь с помощью PathfindingService
     local path = PathfindingService:CreatePath({
         AgentRadius = 2,
         AgentHeight = 5,
         AgentCanJump = true,
-        WaypointSpacing = 3,
-        Costs = {
-            Water = 100,
-            Lava = math.huge
-        }
+        WaypointSpacing = 2,
+        Costs = { Water = 100, Lava = math.huge }
     })
 
-    path:ComputeAsync(rootPart.Position, targetPosition)
+    local success, err = pcall(function()
+        path:ComputeAsync(root.Position, targetPos)
+    end)
 
-    if path.Status == Enum.PathStatus.Success then
-        local waypointsList = path:GetWaypoints()
-        local previousPoint = rootPart.Position
+    if success and path.Status == Enum.PathStatus.Success then
+        -- Рисуем путь по точкам (не через стены)
+        local points = path:GetWaypoints()
+        local prev = root.Position
+        for _, wp in ipairs(points) do
+            local p = wp.Position
+            local dot = Instance.new("Part")
+            dot.Size = Vector3.new(0.8, 0.8, 0.8)
+            dot.Shape = Enum.PartType.Ball
+            dot.Position = p
+            dot.Anchored = true
+            dot.CanCollide = false
+            dot.Color = Color3.fromRGB(255, 0, 0)
+            dot.Material = Enum.Material.Neon
+            dot.Parent = CoreGui
+            dot.Transparency = 0.6
+            table.insert(waypoints, dot)
 
-        for _, waypoint in ipairs(waypointsList) do
-            local point = waypoint.Position
-
-            -- Создаем визуальную точку пути
-            local part = Instance.new("Part")
-            part.Size = Vector3.new(1, 1, 1)
-            part.Shape = Enum.PartType.Ball
-            part.Position = point
-            part.Anchored = true
-            part.CanCollide = false
-            part.Color = Color3.fromRGB(255, 0, 0)
-            part.Material = Enum.Material.Neon
-            part.Parent = CoreGui
-            part.Transparency = 0.7
-            table.insert(waypoints, part)
-
-            -- Создаем линию между точками
-            local linePart = Instance.new("Part")
-            linePart.Size = Vector3.new(1, 1, 1)
-            linePart.Anchored = true
-            linePart.CanCollide = false
-            linePart.Color = Color3.fromRGB(255, 0, 0)
-            linePart.Material = Enum.Material.Neon
-            linePart.Parent = CoreGui
-            linePart.Transparency = 0.9
-
-            local distance = (point - previousPoint).Magnitude
-            linePart.Size = Vector3.new(0.2, 0.2, distance)
-            linePart.CFrame = CFrame.lookAt(previousPoint, point) * CFrame.new(0, 0, -distance / 2)
-            table.insert(waypoints, linePart)
-
-            previousPoint = point
+            local line = Instance.new("Part")
+            local dist = (p - prev).Magnitude
+            line.Size = Vector3.new(0.15, 0.15, dist)
+            line.CFrame = CFrame.lookAt(prev, p) * CFrame.new(0, 0, -dist/2)
+            line.Anchored = true
+            line.CanCollide = false
+            line.Color = Color3.fromRGB(255, 0, 0)
+            line.Material = Enum.Material.Neon
+            line.Parent = CoreGui
+            line.Transparency = 0.7
+            table.insert(waypoints, line)
+            prev = p
+        end
+    else
+        -- Navmesh нет → прямая линия
+        lineToTarget = Instance.new("Beam")
+        lineToTarget.Parent = CoreGui
+        lineToTarget.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0))
+        lineToTarget.Width0 = 0.2
+        lineToTarget.Width1 = 0.2
+        lineToTarget.Transparency = NumberSequence.new(0.5)
+        -- Beam требует Attachments, создадим их
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local attach0 = Instance.new("Attachment")
+            attach0.Parent = char.HumanoidRootPart
+            local attach1 = Instance.new("Attachment")
+            attach1.Parent = workspace.Terrain -- временно, обновим в цикле
+            lineToTarget.Attachment0 = attach0
+            lineToTarget.Attachment1 = attach1
         end
     end
 end
 
-local function togglePathfinding(enabled)
-    pathEnabled = enabled
-    if not enabled then
-        clearPath()
-    end
-end
+local function updatePath()
+    if not enabled then return end
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
 
--- ====================== UI ======================
-local yOffset = 10
-local checkboxESP = createCheckbox("ESP Игроков", UDim2.new(0, 10, 0, yOffset), toggleESP)
-yOffset = yOffset + 45
-local checkboxPath = createCheckbox("Pathfinding", UDim2.new(0, 10, 0, yOffset), togglePathfinding)
-
--- Кнопка для перезапуска Pathfinding
-yOffset = yOffset + 45
-local refreshButton = createButton("Обновить путь", UDim2.new(0, 10, 0, yOffset), function()
-    if not pathEnabled then return end
-    local nearestPlayer = nil
-    local nearestDistance = math.huge
-    local character = LocalPlayer.Character
-    if not character then return end
-
+    local nearestPlayer, nearestDist = nil, math.huge
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
-            local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-            if rootPart then
-                local distance = (rootPart.Position - character:FindFirstChild("HumanoidRootPart").Position).Magnitude
-                if distance < nearestDistance then
-                    nearestDistance = distance
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local dist = (root.Position - myRoot.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
                     nearestPlayer = player
                 end
             end
@@ -248,40 +188,86 @@ local refreshButton = createButton("Обновить путь", UDim2.new(0, 10,
     end
 
     if nearestPlayer then
-        createPathToTarget(nearestPlayer.Character.HumanoidRootPart.Position)
+        buildPathTo(nearestPlayer.Character.HumanoidRootPart.Position)
+    else
+        clearPath()
     end
+end
+
+-- Обновление прямой линии (если используется)
+local function updateBeam()
+    if not enabled or not lineToTarget or not lineToTarget.Attachment0 or not lineToTarget.Attachment1 then
+        return
+    end
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local nearestPlayer, nearestDist = nil, math.huge
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local root = player.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local dist = (root.Position - myRoot.Position).Magnitude
+                if dist < nearestDist then
+                    nearestDist = dist
+                    nearestPlayer = player
+                end
+            end
+        end
+    end
+    if nearestPlayer and nearestPlayer.Character then
+        local targetRoot = nearestPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if targetRoot then
+            lineToTarget.Attachment0.Parent = myRoot
+            lineToTarget.Attachment1.Parent = targetRoot
+        end
+    end
+end
+
+-- ====================== ВКЛ/ВЫКЛ ======================
+local function setEnabled(state)
+    enabled = state
+    if state then
+        mainButton.Text = "ESP + Путь: ВКЛ"
+        mainButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            createESP(player)
+        end
+        updatePath()
+    else
+        mainButton.Text = "ESP + Путь: ВЫКЛ"
+        mainButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        clearESP()
+        clearPath()
+    end
+end
+
+mainButton.MouseButton1Click:Connect(function()
+    setEnabled(not enabled)
 end)
 
--- Заголовок
-local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(0, 200, 0, 30)
-titleLabel.Position = UDim2.new(0, 10, 0, -50)
-titleLabel.BackgroundTransparency = 1
-titleLabel.TextColor3 = Color3.new(1, 1, 1)
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.TextSize = 18
-titleLabel.Text = "Specter Helper"
-titleLabel.Parent = ScreenGui
-
--- ====================== ИНИЦИАЛИЗАЦИЯ ======================
--- Подключаем ESP для новых игроков
+-- ====================== ОБРАБОТЧИКИ ======================
 Players.PlayerAdded:Connect(function(player)
-    if espEnabled then
-        createESPForPlayer(player)
-    end
+    if enabled then createESP(player) end
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-    if espHighlights[player] then
-        espHighlights[player].Highlight:Destroy()
-        espHighlights[player].Billboard:Destroy()
-        espHighlights[player] = nil
+    if espItems[player] then
+        espItems[player].Highlight:Destroy()
+        espItems[player].Billboard:Destroy()
+        espItems[player] = nil
     end
 end)
 
--- Обновление расстояний ESP и Pathfinding
 RunService.RenderStepped:Connect(function()
     updateESPDistances()
+    updateBeam()
 end)
 
-print("Specter Helper загружен. Готов к работе!")
+spawn(function()
+    while true do
+        wait(0.5)
+        if enabled then
+            updatePath()
+        end
+    end
+end)
